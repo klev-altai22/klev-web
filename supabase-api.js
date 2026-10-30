@@ -33,7 +33,9 @@
   }return session.access_token;
  }
  async function db(path,opts={}){return request('/rest/v1/'+path,{...opts,token:await token()})}
- async function me(){if(!session)return null;const rows=await db('klev_profiles?select=*');if(!rows.length)throw Error('Профиль ещё не создан. Обратитесь к владельцу сайта.');return {...rows[0],email:session.user.email,access_active:true,access_mode:'free'}}
+ async function access(){return db('rpc/klev_access_status',{method:'POST',body:{}})}
+ async function me(){if(!session)return null;const status=await access();const rows=await db('klev_profiles?select=*');if(!rows.length)throw Error('Профиль ещё не создан. Обратитесь к владельцу сайта.');return {...rows[0],email:session.user.email,access_active:!status.is_banned,is_banned:status.is_banned,is_admin:status.is_admin,access_mode:'free'}}
+ async function requireAccess(){if((await access()).is_banned){const e=Error('Ваш доступ к чату и новым публикациям заблокирован владельцем.');e.code='BANNED';throw e}}
  window.KlevAPI=async function(path,data){
   if(path==='me'){configured();return {user:await me()}}
   if(path==='register'){
@@ -43,15 +45,20 @@
   }
   if(path==='login'){save(await request('/auth/v1/token?grant_type=password',{method:'POST',body:{email:data.email,password:data.password}}));return {user:await me()}}
   if(path==='logout'){if(session)await request('/auth/v1/logout?scope=local',{method:'POST',token:await token()});save(null);return {ok:true}}
-  if(path==='profile'){await db('klev_profiles?id=eq.'+encodeURIComponent(session?.user?.id||''),{method:'PATCH',body:{name:data.name,city:data.city,favorite:data.favorite,experience:data.experience,bio:data.bio}});return {user:await me()}}
+  if(path==='profile'){await requireAccess();await db('klev_profiles?id=eq.'+encodeURIComponent(session?.user?.id||''),{method:'PATCH',body:{name:data.name,city:data.city,favorite:data.favorite,experience:data.experience,bio:data.bio}});return {user:await me()}}
   if(path==='messages'){
+   await requireAccess();
    if(data){await db('klev_messages',{method:'POST',body:{user_id:session?.user?.id,text:data.text}});return {ok:true}}
    const rows=await db('klev_messages?select=id,user_id,name,city,text,created&order=id.desc&limit=100');return {messages:rows.reverse()};
   }
   if(path==='catches'){
-   if(data){await db('klev_catches',{method:'POST',body:{user_id:session?.user?.id,fish:data.fish,weight:Number(data.weight),date:data.date,place:data.place,note:data.note||''}});return {ok:true}}
+   if(data){await requireAccess();await db('klev_catches',{method:'POST',body:{user_id:session?.user?.id,fish:data.fish,weight:Number(data.weight),date:data.date,place:data.place,note:data.note||''}});return {ok:true}}
    return {catches:await db('klev_catches?select=*&order=date.desc,id.desc')};
   }
+  if(path==='admin/users')return {users:await db('rpc/klev_admin_list_users',{method:'POST',body:{p_query:data?.query||'',p_offset:data?.offset||0}})};
+  if(path==='admin/delete-message'){await db('rpc/klev_admin_delete_message',{method:'POST',body:{p_message_id:data.id}});return {ok:true}}
+  if(path==='admin/ban'){await db('rpc/klev_admin_ban_user',{method:'POST',body:{p_user_id:data.user_id,p_reason:data.reason||''}});return {ok:true}}
+  if(path==='admin/unban'){await db('rpc/klev_admin_unban_user',{method:'POST',body:{p_user_id:data.user_id}});return {ok:true}}
   if(path==='export')return {profile:await me(),catches:(await window.KlevAPI('catches')).catches};
   if(path==='delete-account'){
    if(!session)throw Error('Войдите в аккаунт');
