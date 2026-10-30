@@ -3,7 +3,11 @@
  const C=window.KLEV_CONFIG||{};
  const URL=(C.supabaseUrl||'').replace(/\/$/,'');
  const KEY=C.publishableKey||'';
- if(/(?:access_token|refresh_token|error_description)=/.test(location.hash))history.replaceState(null,'',location.pathname+location.search+'#home');
+ const emailReturn=new URLSearchParams(location.hash.replace(/^#/,''));
+ if(emailReturn.has('error')||emailReturn.has('error_description'))window.KLEV_EMAIL_NOTICE='expired';
+ else if(emailReturn.get('type')==='signup'&&emailReturn.has('access_token'))window.KLEV_EMAIL_NOTICE='confirmed';
+ // Deliberately do not accept session tokens from a confirmation link. User signs in explicitly.
+ if(emailReturn.has('access_token')||emailReturn.has('refresh_token')||emailReturn.has('error')||emailReturn.has('error_description'))history.replaceState(null,'',location.pathname+location.search+'#home');
  const storage='klev-supabase-session-v1';
  let session=null;
  try{session=JSON.parse(localStorage.getItem(storage)||'null')}catch{}
@@ -55,11 +59,20 @@
    if(data){await requireAccess();await db('klev_catches',{method:'POST',body:{user_id:session?.user?.id,fish:data.fish,weight:Number(data.weight),date:data.date,place:data.place,note:data.note||''}});return {ok:true}}
    return {catches:await db('klev_catches?select=*&order=date.desc,id.desc')};
   }
+  if(path==='feedback/feed')return request('/rest/v1/rpc/klev_feedback_feed',{method:'POST',token:session?await token():undefined,body:{p_kind:data.kind,p_before:data.before||null}});
+  if(path==='feedback/rate'){await requireAccess();await db('rpc/klev_publish_rating',{method:'POST',body:{p_stars:Number(data.stars),p_text:data.text||''}});return {ok:true}}
+  if(path==='feedback/idea'){await requireAccess();await db('rpc/klev_publish_idea',{method:'POST',body:{p_text:data.text}});return {ok:true}}
+  if(path==='feedback/mine')return db('rpc/klev_my_feedback',{method:'POST',body:{}});
+  if(path==='admin/delete-feedback'){await db('rpc/klev_admin_delete_feedback',{method:'POST',body:{p_kind:data.kind,p_id:data.id}});return {ok:true}}
   if(path==='admin/users')return {users:await db('rpc/klev_admin_list_users',{method:'POST',body:{p_query:data?.query||'',p_offset:data?.offset||0}})};
   if(path==='admin/delete-message'){await db('rpc/klev_admin_delete_message',{method:'POST',body:{p_message_id:data.id}});return {ok:true}}
   if(path==='admin/ban'){await db('rpc/klev_admin_ban_user',{method:'POST',body:{p_user_id:data.user_id,p_reason:data.reason||''}});return {ok:true}}
   if(path==='admin/unban'){await db('rpc/klev_admin_unban_user',{method:'POST',body:{p_user_id:data.user_id}});return {ok:true}}
-  if(path==='export')return {profile:await me(),catches:(await window.KlevAPI('catches')).catches};
+  if(path==='export'){
+   const result={profile:await me(),catches:(await window.KlevAPI('catches')).catches};
+   try{result.community=await window.KlevAPI('feedback/mine')}catch(e){result.community={unavailable:true,error:e.message}}
+   return result;
+  }
   if(path==='delete-account'){
    if(!session)throw Error('Войдите в аккаунт');
    // Reauthenticate before destructive action; the RPC independently restricts deletion to auth.uid().
