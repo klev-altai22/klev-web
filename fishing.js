@@ -14,7 +14,7 @@ function getStore(k,fallback=null){try{return JSON.parse(localStorage.getItem(k)
 function setStore(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch{}}
 let city=D.cities.find(c=>c.id===getStore('klev-city'))||D.cities.find(c=>c.id==='novoaltaysk');
 let species=D.fish.find(f=>f.id===getStore('klev-fish'))||D.fish[0];
-let selectedDay=0,weather=null,loadedAt=null,stale=false,sequence=0,busy=false;
+let selectedDay=0,weather=null,loadedAt=null,stale=false,sequence=0,busy=false,nextRefreshAt=0;
 const lastTry=new Map();let refreshTimer;
 function formatDate(date){return new Date(date+'T12:00:00+07:00').toLocaleDateString('ru',{timeZone:TZ,weekday:'short',day:'numeric',month:'short'})}
 function weatherText(c){return ({0:'Ясно',1:'Преимущественно ясно',2:'Переменная облачность',3:'Пасмурно',45:'Туман',48:'Изморозь и туман',51:'Слабая морось',53:'Морось',55:'Сильная морось',56:'Переохлаждённая морось',57:'Переохлаждённая морось',61:'Небольшой дождь',63:'Дождь',65:'Сильный дождь',66:'Переохлаждённый дождь',67:'Переохлаждённый дождь',71:'Небольшой снег',73:'Снег',75:'Сильный снег',77:'Снежные зёрна',80:'Небольшие ливни',81:'Ливни',82:'Сильные ливни',85:'Снегопад',86:'Сильный снегопад',95:'Гроза',96:'Гроза с градом',99:'Гроза с градом'})[c]||'Нет описания'}
@@ -22,6 +22,9 @@ function icon(code){if(code===0||code===1)return '☀';if(code===2)return '⛅';
 function direction(deg){return finite(deg)?['С','СВ','В','ЮВ','Ю','ЮЗ','З','СЗ'][Math.round(deg/45)%8]:'—'}
 function valid(w){return !!(w&&/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(w.current?.time||'')&&Array.isArray(w.daily?.time)&&w.daily.time.length>=1&&w.daily.time.every(t=>/^\d{4}-\d{2}-\d{2}$/.test(t))&&Array.isArray(w.hourly?.time)&&w.hourly.time.length>0&&w.hourly.time.every(t=>/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(t)))}
 function urlFor(c){const p=new URLSearchParams({latitude:c.lat,longitude:c.lon,timezone:TZ,wind_speed_unit:'ms',forecast_days:'7',past_days:'1',current:'temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,cloud_cover,surface_pressure,pressure_msl,wind_speed_10m,wind_direction_10m,wind_gusts_10m,precipitation',hourly:'temperature_2m,precipitation_probability,precipitation,weather_code,surface_pressure,wind_speed_10m,wind_gusts_10m',daily:'weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset,precipitation_probability_max,wind_speed_10m_max,wind_gusts_10m_max'});return 'https://api.open-meteo.com/v1/forecast?'+p}
+function gatewayUrl(c){const base=String(window.KLEV_CONFIG?.supabaseUrl||'').replace(/\/$/,'');if(!/^https:\/\/[a-z0-9-]+\.supabase\.co$/.test(base))throw Error('Владелец ещё не подключил погодную функцию Supabase.');return base+'/functions/v1/klev-weather?city='+encodeURIComponent(c.id)}
+function proxyTime(data,c,now=Date.now()){const m=data?._klev;if(m?.via!=='supabase'||m.source!=='Open-Meteo'||m.city!==c.id||!finite(m.fetched_at)||m.fetched_at<=0||m.fetched_at>now+60000||now-m.fetched_at>=MAX_STALE)throw Error('Погодный шлюз вернул неполные или устаревшие данные.');return m.fetched_at}
+function cacheValid(cached,c){try{return !!(cached&&valid(cached.data)&&proxyTime(cached.data,c)===cached.at)}catch{return false}}
 function futureDays(){return weather.daily.time.map((date,index)=>({date,index})).filter(x=>x.date>=currentDate()).slice(0,7)}
 function dayData(){const days=futureDays();const chosen=days[selectedDay]||days[0];if(!chosen)return null;const i=chosen.index,d=weather.daily;return {...chosen,code:d.weather_code?.[i],max:d.temperature_2m_max?.[i],min:d.temperature_2m_min?.[i],rise:d.sunrise?.[i],set:d.sunset?.[i],rain:d.precipitation_probability_max?.[i],wind:d.wind_speed_10m_max?.[i],gust:d.wind_gusts_10m_max?.[i]}}
 function comfort(d){if([95,96,99].includes(d.code))return {level:'bad',label:'Гроза в прогнозе',why:'Рыбалку у открытой воды стоит отложить при грозе. Проверьте официальные предупреждения.'};if((finite(d.gust)&&d.gust>=15)||(finite(d.wind)&&d.wind>=8))return {level:'bad',label:'Сложная погода',why:'Прогнозируется сильный ветер или порывы. Это оценка погоды, а не вероятности клёва.'};if(![d.wind,d.gust,d.rain,d.min].every(finite))return {level:'mid',label:'Данных недостаточно',why:'Не все погодные показатели доступны. Оценка условий не рассчитывается.'};if((finite(d.wind)&&d.wind>4)||(finite(d.rain)&&d.rain>=60)||(finite(d.min)&&d.min<0))return {level:'mid',label:'Нужна подготовка',why:'Ветер, вероятные осадки или мороз требуют подходящей одежды и осторожности.'};return {level:'good',label:'Относительно спокойно',why:'По выбранным погодным показателям выезд выглядит комфортнее. Это не оценка безопасности воды и не гарантия улова.'}}
@@ -39,7 +42,7 @@ function render(){
  const status=$('#weather-source');
  if(!weather){$('#weather-current').innerHTML='<div class="weather-placeholder"><span class="weather-orbit">◌</span><p>Ожидаем погодные данные…</p></div>';$('#forecast-days').innerHTML='';$('#fishing-detail').innerHTML='<p class="subtle">Рекомендации появятся после загрузки прогноза. Выдуманных значений здесь нет.</p>';$('#weather-detail').innerHTML='';return}
  const c=weather.current,h=weather.hourly,stamp=c.time;const hourIndex=h.time.findIndex(t=>t.slice(0,13)===stamp.slice(0,13));const pNow=pressure(c.surface_pressure),before=hourIndex>=3?pressure(h.surface_pressure?.[hourIndex-3]):null;const delta=finite(pNow)&&finite(before)?pNow-before:null;const trend=finite(delta)?(delta>0?'+':'')+n(delta,1)+' мм за ~3 ч':'Нет данных о динамике';
- status.textContent=`${stale?'⚠ Сохранённые данные. Обновление не удалось. ':''}Open-Meteo · получено ${localStamp(loadedAt)} · расчёт модели на ${stamp.replace('T',' ')} · UTC+7`;
+ status.textContent=`${stale?'⚠ Сохранённая копия. ':''}Open-Meteo через Supabase · сервер получил ${localStamp(loadedAt)} · расчёт модели на ${stamp.replace('T',' ')} · UTC+7`;
  status.classList.toggle('stale',stale);
  $('#weather-current').innerHTML=`<div class="weather-overview"><div><span class="eyebrow muted">${esc(city.name)} · РАСЧЁТНАЯ ПОГОДА</span><div class="current-temperature"><span class="weather-symbol">${icon(c.weather_code)}</span>${temp(c.temperature_2m)}</div><p>${weatherText(c.weather_code)} · ощущается ${temp(c.apparent_temperature)}</p></div><div class="current-meta"><span>Погода по координатам центра города</span><strong>${city.lat.toFixed(3)}° N · ${city.lon.toFixed(3)}° E</strong><span>Не показания местной метеостанции</span></div></div><div class="meteo-grid">${metric('ВЕТЕР',n(c.wind_speed_10m,1),'м/с',direction(c.wind_direction_10m)+' · порывы '+n(c.wind_gusts_10m,1)+' м/с')}${metric('ДАВЛЕНИЕ У ПОВЕРХНОСТИ',n(pNow),'мм',trend)}${metric('ВЛАЖНОСТЬ',n(c.relative_humidity_2m),'%', 'Облачность '+n(c.cloud_cover)+'%')}${metric('ОСАДКИ СЕЙЧАС',n(c.precipitation,1),'мм','Расчётный текущий интервал модели')}</div>`;
  const days=futureDays();selectedDay=Math.min(selectedDay,Math.max(0,days.length-1));
@@ -55,18 +58,19 @@ function updateMini(c){$('#hero-weather').innerHTML=weather?`<span>${esc(city.na
 function sync(){document.querySelectorAll('[data-city-select]').forEach(s=>s.value=city.id);document.querySelectorAll('[data-city-label]').forEach(s=>s.textContent=city.name);document.querySelectorAll('[data-fish-select]').forEach(s=>s.value=species.id);$('#city-place').innerHTML=`<div><span class="eyebrow muted">ВЫБРАННЫЙ ГОРОД</span><h3>${esc(city.name)} · ${esc(city.water)}</h3><p>${esc(city.note)}</p><a class="text-link" href="https://www.openstreetmap.org/?mlat=${city.lat}&mlon=${city.lon}#map=12/${city.lat}/${city.lon}" target="_blank" rel="noopener noreferrer">Посмотреть окрестности на OpenStreetMap ↗</a></div><span class="place-number">${String(D.cities.indexOf(city)+1).padStart(2,'0')}<small>/12</small></span>`}
 async function load(force=false){
  const own=++sequence;busy=true;sync();selectedDay=0;weather=null;loadedAt=null;stale=false;
- const key='klev-weather-v2-'+city.id,cached=getStore(key);const hasCache=!!(cached&&valid(cached.data)&&Date.now()-cached.at<MAX_STALE);
- if(hasCache){weather=cached.data;loadedAt=cached.at;stale=Date.now()-cached.at>=TTL;render()}else{render();$('#weather-source').textContent='Загружаем прогноз Open-Meteo…';$('#hero-weather').innerHTML='<span>Загружаем погоду…</span>'}
+ const key='klev-weather-v3-proxy-'+city.id,cached=getStore(key);const hasCache=cacheValid(cached,city);
+ if(hasCache){weather=cached.data;loadedAt=cached.at;nextRefreshAt=cached.at+TTL;stale=Date.now()-cached.at>=TTL;render()}else{render();$('#weather-source').textContent='Загружаем прогноз Open-Meteo через Supabase…';$('#hero-weather').innerHTML='<span>Загружаем погоду…</span>'}
  $('#weather-error').classList.add('hidden');
  if(hasCache&&!force&&Date.now()-cached.at<TTL){busy=false;return}
  if(force&&Date.now()-(lastTry.get(city.id)||0)<60000){$('#weather-error').textContent='Обновление уже запрашивалось. Подождите минуту, чтобы не перегружать бесплатный источник.';$('#weather-error').classList.remove('hidden');busy=false;return}
- lastTry.set(city.id,Date.now());
- const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),15000);const selectedCity=city;
+ lastTry.set(city.id,Date.now());nextRefreshAt=Date.now()+TTL;
+ const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),20000);const selectedCity=city;
  try{
-  const r=await fetch(urlFor(selectedCity),{signal:controller.signal,credentials:'omit',referrerPolicy:'no-referrer'});
-  if(!r.ok)throw Error(r.status===429?'Источник ограничил частоту запросов. Попробуйте позже.':'Погодный источник временно недоступен (HTTP '+r.status+').');
-  const data=await r.json();if(!valid(data))throw Error('Источник вернул неполный прогноз.');if(own!==sequence)return;
-  weather=data;loadedAt=Date.now();stale=false;setStore(key,{at:loadedAt,data});render();
+  const r=await fetch(gatewayUrl(selectedCity),{signal:controller.signal,credentials:'omit',referrerPolicy:'no-referrer',cache:'no-store'});
+  let data;try{data=await r.json()}catch{throw Error('Погодный шлюз вернул непонятный ответ. Попробуйте позже.')}
+  if(!r.ok){if(r.status===401)throw Error('Погодная функция требует вход. Владельцу нужно отключить Verify JWT только у klev-weather.');throw Error(typeof data?.error==='string'?data.error.slice(0,220):r.status===429?'Источник ограничил частоту запросов. Попробуйте позже.':'Погодный сервис временно недоступен (HTTP '+r.status+').')}
+  if(!valid(data))throw Error('Источник вернул неполный прогноз.');const received=proxyTime(data,selectedCity);if(own!==sequence)return;
+  weather=data;loadedAt=received;nextRefreshAt=received+TTL;stale=false;setStore(key,{at:loadedAt,data});render();
  }catch(e){if(own!==sequence)return;stale=hasCache;const text=(e.name==='AbortError'?'Погодный источник не ответил вовремя.':e.name==='TypeError'?'Не удалось связаться с погодным источником.':e.message||'Не удалось получить погоду.')+(hasCache?' Показана сохранённая копия с указанным временем.':' Данные не подменяются выдуманными значениями.');$('#weather-error').textContent=text;$('#weather-error').classList.remove('hidden');if(hasCache)render();else{$('#weather-source').textContent='Свежие погодные данные недоступны.';$('#weather-current').innerHTML='<div class="weather-placeholder"><span class="weather-orbit">☁</span><h3>Погода временно недоступна</h3><p>Проверьте соединение и нажмите «Обновить» через минуту.</p></div>';$('#hero-weather').innerHTML='<span>Погода недоступна</span>'}}
  finally{clearTimeout(timer);if(own===sequence)busy=false}
 }
@@ -87,8 +91,8 @@ function init(){
   if(b.id==='theme-toggle'){const dark=document.body.classList.toggle('night-theme');setStore('klev-dark',dark);b.setAttribute('aria-pressed',String(dark));b.textContent=dark?'☀':'☾'}
  });
  if(getStore('klev-dark',false)){document.body.classList.add('night-theme');$('#theme-toggle').setAttribute('aria-pressed','true');$('#theme-toggle').textContent='☀'}
- load();clearInterval(refreshTimer);refreshTimer=setInterval(()=>{if(!document.hidden&&!busy)load()},TTL);document.addEventListener('visibilitychange',()=>{if(!document.hidden&&!busy&&(!loadedAt||Date.now()-loadedAt>TTL))load()});
+ load();clearInterval(refreshTimer);refreshTimer=setInterval(()=>{if(!document.hidden&&!busy&&Date.now()>=nextRefreshAt)load()},60000);document.addEventListener('visibilitychange',()=>{if(!document.hidden&&!busy&&Date.now()>=nextRefreshAt)load()});
 }
-window.KlevFishingTest={pressure,windows,comfort,moon,valid,urlFor,weatherText};
+window.KlevFishingTest={pressure,windows,comfort,moon,valid,urlFor,gatewayUrl,proxyTime,cacheValid,weatherText};
 init();
 })();
