@@ -1,5 +1,4 @@
-// Эти ДВА значения являются публичными. Пароль базы, secret или service_role ключ сюда НЕЛЬЗЯ.
 window.KLEV_CONFIG = {
-  supabaseUrl: '',
-  publishableKey: ''
+  supabaseUrl: 'https://wkadnwkobxhyaufzcrxc.supabase.co',
+  publishableKey: 'sb_publishable_jaEIHPKkcBemximRtvbX6A_Sma0IWRg'
 };
