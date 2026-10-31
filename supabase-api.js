@@ -60,6 +60,25 @@
   const linked=await db('klev_catches?select=id,photo_path&photo_path=not.is.null');
   for(const c of linked)await db('rpc/klev_detach_photo',{method:'POST',body:{p_catch:c.id}});
  }
+ const chatId=id=>{if(!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(String(id)))throw Error('Неверное прикрепление');return session.user.id+'/'+id+'.webp'};
+ async function removeChatPaths(paths){if(paths.length)await request('/storage/v1/object/klev-chat',{method:'DELETE',token:await token(),body:{prefixes:paths}})}
+ async function cleanMyChatPhotos(){
+  const uid=session.user.id,items=await request('/storage/v1/object/list/klev-chat',{method:'POST',token:await token(),body:{prefix:uid+'/',limit:100}});
+  const paths=items.filter(x=>x.id).map(x=>uid+'/'+x.name);await removeChatPaths(paths);
+ }
+ async function sendChatPhoto(data){
+  const blob=data.blob;if(!(blob instanceof Blob)||blob.type!=='image/webp'||blob.size<1||blob.size>524288)throw Error('Нужно WebP-фото до 512 КБ');
+  const path=chatId(data.upload_id),caption=String(data.text||'').trim()||'📷 Фото улова',reply=data.reply_to||null;
+  if(caption.length>1000)throw Error('Подпись: до 1000 символов');
+  const status=await db('rpc/klev_chat_photo_status',{method:'POST',body:{p_path:path}});
+  if(status.message_id){if(status.text!==caption||String(status.reply_to||'')!==String(reply||''))throw Error('Это фото уже опубликовано с другой подписью. Уберите прикрепление и проверьте чат.');return {ok:true,id:status.message_id,retried:true}}
+  if(!status.stored){
+   const r=await fetch(URL+'/storage/v1/object/klev-chat/'+path,{method:'POST',headers:{apikey:KEY,Authorization:'Bearer '+await token(),'Content-Type':'image/webp','x-upsert':'false','cache-control':'60'},body:blob});
+   if(!r.ok){const j=await r.json().catch(()=>({}));throw Error(friendly(j.message||j.error||'Не удалось загрузить фото. Лимиты: 10 в сутки, пауза 30 секунд, до 20 сохранённых фото.'))}
+  }
+  // Never delete after an uncertain RPC response: commit may have succeeded. Retry uses the SAME path.
+  const id=await db('rpc/klev_send_chat_photo',{method:'POST',body:{p_text:caption,p_path:path,p_reply:reply}});return {ok:true,id};
+ }
  window.KlevAPI=async function(path,data){
   if(path==='password/recover'){
    const email=String(data.email||'').trim();if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))throw Error('Введите email');
@@ -115,8 +134,24 @@
   if(path==='login'){save(await request('/auth/v1/token?grant_type=password',{method:'POST',body:{email:data.email,password:data.password}}));return {user:await me()}}
   if(path==='logout'){if(session)await request('/auth/v1/logout?scope=local',{method:'POST',token:await token()});save(null);return {ok:true}}
   if(path==='profile'){await requireAccess();await db('klev_profiles?id=eq.'+encodeURIComponent(session?.user?.id||''),{method:'PATCH',body:{name:data.name,city:data.city,favorite:data.favorite,experience:data.experience,bio:data.bio}});return {user:await me()}}
+  if(path==='chat-photo/sign'){
+   if(!/^\d+$/.test(String(data.id)))throw Error('Неверное сообщение');await requireAccess();
+   const rows=await db('klev_messages?id=eq.'+encodeURIComponent(data.id)+'&select=photo_path');const path=rows[0]?.photo_path;
+   if(!path)return {url:null};const result=await request('/storage/v1/object/sign/klev-chat/'+path.split('/').map(encodeURIComponent).join('/'),{method:'POST',token:await token(),body:{expiresIn:300}});
+   const signed=result.signedURL||result.signedUrl;if(!signed)throw Error('Не удалось открыть фото');return {url:URL+'/storage/v1'+signed};
+  }
+  if(path==='chat-photo/cleanup'){
+   await token();const paths=await db('rpc/klev_claim_unused_chat_photos',{method:'POST',body:{}});
+   if(!Array.isArray(paths)||paths.some(p=>typeof p!=='string'||!p.startsWith(session.user.id+'/')))throw Error('Некорректный список файлов');
+   await removeChatPaths(paths);return {ok:true,count:paths.length};
+  }
+  if(path==='chat-photo/discard'){
+   await token();const path=chatId(data.upload_id),status=await db('rpc/klev_chat_photo_status',{method:'POST',body:{p_path:path}});
+   if(status.message_id)return {ok:true,published:true};if(status.stored)await removeChatPaths([path]);return {ok:true};
+  }
   if(path==='messages'){
    await requireAccess();
+   if(data?.blob)return sendChatPhoto(data);
    if(data){await db('klev_messages',{method:'POST',body:{user_id:session?.user?.id,text:data.text,reply_to:data.reply_to||null}});return {ok:true}}
    return db('rpc/klev_chat_feed',{method:'POST',body:{}});
   }
@@ -130,12 +165,17 @@
   if(path==='feedback/mine')return db('rpc/klev_my_feedback',{method:'POST',body:{}});
   if(path==='admin/delete-feedback'){await db('rpc/klev_admin_delete_feedback',{method:'POST',body:{p_kind:data.kind,p_id:data.id}});return {ok:true}}
   if(path==='admin/users')return {users:await db('rpc/klev_admin_list_users',{method:'POST',body:{p_query:data?.query||'',p_offset:data?.offset||0}})};
-  if(path==='admin/delete-message'){await db('rpc/klev_admin_delete_message',{method:'POST',body:{p_message_id:data.id}});return {ok:true}}
+  if(path==='admin/delete-message'){
+   if(!(await access()).is_admin)throw Error('Только владелец сайта');if(!/^\d+$/.test(String(data.id)))throw Error('Неверное сообщение');
+   const rows=await db('klev_messages?id=eq.'+encodeURIComponent(data.id)+'&select=photo_path');
+   if(rows[0]?.photo_path)await removeChatPaths([rows[0].photo_path]);
+   await db('rpc/klev_admin_delete_message',{method:'POST',body:{p_message_id:data.id}});return {ok:true};
+  }
   if(path==='admin/ban'){await db('rpc/klev_admin_ban_user',{method:'POST',body:{p_user_id:data.user_id,p_reason:data.reason||''}});return {ok:true}}
   if(path==='admin/unban'){await db('rpc/klev_admin_unban_user',{method:'POST',body:{p_user_id:data.user_id}});return {ok:true}}
   if(path==='export'){
    const result={profile:await me(),catches:(await window.KlevAPI('catches')).catches};
-   try{result.community=await window.KlevAPI('feedback/mine');result.community_update=await db('rpc/klev_community_export',{method:'POST',body:{}});if(Array.isArray(result.community_update?.catches)){result.catches=result.community_update.catches;delete result.community_update.catches}if(Array.isArray(result.community_update?.messages)){result.messages=result.community_update.messages;delete result.community_update.messages}result.photo_note='Фото скачиваются отдельно из дневника; JSON содержит пути, не файлы.'}catch(e){result.community={unavailable:true,error:e.message}}
+   try{result.community=await window.KlevAPI('feedback/mine');result.community_update=await db('rpc/klev_community_export',{method:'POST',body:{}});if(Array.isArray(result.community_update?.catches)){result.catches=result.community_update.catches;delete result.community_update.catches}if(Array.isArray(result.community_update?.messages)){result.messages=result.community_update.messages;delete result.community_update.messages}result.photo_note='Фото дневника и чата скачиваются отдельно; JSON содержит пути, не файлы. Фото чата были доступны вошедшим участникам.'}catch(e){result.community={unavailable:true,error:e.message}}
    return result;
   }
   if(path==='delete-account'){
@@ -143,6 +183,7 @@
    if((await me()).is_admin)throw Error('Владелец не может удалить свой аккаунт, пока права не переданы через базу.');
    // Reauthenticate before destructive action; the RPC independently restricts deletion to auth.uid().
    const s=await request('/auth/v1/token?grant_type=password',{method:'POST',body:{email:session.user.email,password:data.password}});save(s);
+   await cleanMyChatPhotos();
    await cleanMyPhotos();
    await db('rpc/klev_delete_my_account',{method:'POST',body:{confirmation:'DELETE'}});save(null);return {ok:true};
   }

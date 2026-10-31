@@ -1,7 +1,7 @@
 /* КЛЁВ Алтай: progressive motion and read-only, same-origin release notifications. */
 (()=>{'use strict';
- const BUILD=2026103102,LABEL='Плавные переходы',SITE='https://klev-altai22.github.io/klev-web/';
- const CHANGES=['Плавное появление карточек и переходы между разделами.','Мягкие эффекты кнопок и новых сообщений без мигания всей переписки.','Уведомление о новой версии: перезагрузка только по вашему нажатию.','Предупреждение перед перезагрузкой, если остались несохранённые записи.','Кнопки «Поделиться сайтом» и «Наверх».','Эффекты можно отключить; системная настройка уменьшения движения учитывается.'];
+ const BUILD=2026103103,LABEL='Фото в общем чате',SITE='https://klev-altai22.github.io/klev-web/';
+ const CHANGES=["Фото прямо в общем чате: с подписью или без.", "Предпросмотр перед отправкой и сжатие изображения до 512 КБ.", "Увеличение фото, ответы и жалобы на сообщения с фотографиями.", "Защита от дублей при повторной отправке после обрыва связи.", "Фото дневника остаются личными; фото чата видны участникам.", "Переходы, уведомления о версиях и остальные функции сохранены."];
  const q=s=>document.querySelector(s),read=(key,fallback)=>{try{return JSON.parse(localStorage.getItem(key))??fallback}catch{return fallback}},save=(key,v)=>{try{localStorage.setItem(key,JSON.stringify(v))}catch{}};
  const media=window.matchMedia('(prefers-reduced-motion: reduce)');let userOff=read('klev-motion-off',false)===true,remote=null,busy=false,lastCheck=-Infinity,timer=null,notifiedBuild=0,notifiedMaintenance='',suppressUnload=false;
  const dirtyForms=new Set(),trackedForms=new Set(['message-form','profile-form','catch-form','meetup-form','checklist-form','report-form','feedback-form']);
