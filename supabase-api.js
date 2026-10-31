@@ -3,16 +3,24 @@
  const C=window.KLEV_CONFIG||{};
  const URL=(C.supabaseUrl||'').replace(/\/$/,'');
  const KEY=C.publishableKey||'';
- const emailReturn=new URLSearchParams(location.hash.replace(/^#/,''));
- if(emailReturn.has('error')||emailReturn.has('error_description'))window.KLEV_EMAIL_NOTICE='expired';
- else if(emailReturn.get('type')==='signup'&&emailReturn.has('access_token'))window.KLEV_EMAIL_NOTICE='confirmed';
- // Deliberately do not accept session tokens from a confirmation link. User signs in explicitly.
- if(emailReturn.has('access_token')||emailReturn.has('refresh_token')||emailReturn.has('error')||emailReturn.has('error_description'))history.replaceState(null,'',location.pathname+location.search+'#home');
+ let recovery=null;
+ function consumeEmailHash(){
+  const h=new URLSearchParams(location.hash.replace(/^#/,''));let kind=null;
+  if(h.get('type')==='recovery'&&h.has('access_token')){recovery={access_token:h.get('access_token')};window.KLEV_RECOVERY_PENDING=true;kind='recovery'}
+  if(h.has('error')||h.has('error_description')){window.KLEV_EMAIL_NOTICE='expired';kind='expired'}
+  else if(h.get('type')==='signup'&&h.has('access_token')){window.KLEV_EMAIL_NOTICE='confirmed';kind='confirmed'}
+  // No signup session is accepted. Recovery token stays in memory only and is verified server-side.
+  if(h.has('access_token')||h.has('refresh_token')||h.has('error')||h.has('error_description'))history.replaceState(null,'',location.pathname+location.search+'#home');
+  return kind;
+ }
+ consumeEmailHash();
+ window.addEventListener?.('hashchange',()=>{const kind=consumeEmailHash();if(kind==='recovery')window.KlevCommunity?.recovery();else if(kind==='expired')window.toast?.('Ссылка устарела или недействительна. Запросите новую.');else if(kind==='confirmed')window.toast?.('Почта подтверждена. Можно войти.')});
  const storage='klev-supabase-session-v1';
  let session=null;
  try{session=JSON.parse(localStorage.getItem(storage)||'null')}catch{}
  let refreshing=null;
  function configured(){
+  if(window.KLEV_PREVIEW)throw Error('Тестовый макет: вход, отправка данных и письма отключены. Рабочий сайт не изменён.');
   if(!/^https:\/\/[a-z0-9-]+\.supabase\.co$/.test(URL)||!KEY)throw Error('Владелец ещё подключает базу. Регистрация и чат пока недоступны.');
   if(KEY.startsWith('sb_secret_'))throw Error('Ошибка настройки: секретный ключ нельзя использовать в браузере.');
   if(KEY.startsWith('eyJ')){
@@ -28,7 +36,7 @@
   const raw=await r.text();let data;try{data=raw?JSON.parse(raw):null}catch{throw Error('Неожиданный ответ базы данных')}
   if(!r.ok){const e=Error(friendly(data?.msg||data?.message||data?.error_description||data?.error||'Ошибка базы данных'));e.status=r.status;throw e}return data;
  }
- function friendly(s){if(/Invalid login credentials/i.test(s))return 'Неверный email или пароль';if(/Email not confirmed/i.test(s))return 'Сначала подтвердите email по ссылке из письма';if(/rate limit|too many|сообщений слишком/i.test(s))return 'Слишком много запросов. Подождите немного.';if(/schema cache|does not exist|permission denied/i.test(s))return 'База ещё не настроена владельцем сайта';if(/already registered/i.test(s))return 'Этот email уже зарегистрирован';return String(s).slice(0,220)}
+ function friendly(s){if(/Invalid login credentials/i.test(s))return 'Неверный email или пароль';if(/Email not confirmed/i.test(s))return 'Сначала подтвердите email по ссылке из письма';if(/rate limit|too many|сообщений слишком/i.test(s))return 'Слишком много запросов. Подождите немного.';if(/schema cache|does not exist|permission denied/i.test(s))return 'База ещё не настроена владельцем сайта';if(/row.level security/i.test(s))return 'Операция недоступна: проверьте права, блокировку и лимиты.';if(/already registered/i.test(s))return 'Этот email уже зарегистрирован';return String(s).slice(0,220)}
  async function token(){
   if(!session)throw Error('Войдите в аккаунт');
   if(session.expires_at<Date.now()/1000+60){
@@ -40,7 +48,64 @@
  async function access(){return db('rpc/klev_access_status',{method:'POST',body:{}})}
  async function me(){if(!session)return null;const status=await access();const rows=await db('klev_profiles?select=*');if(!rows.length)throw Error('Профиль ещё не создан. Обратитесь к владельцу сайта.');return {...rows[0],email:session.user.email,access_active:!status.is_banned,is_banned:status.is_banned,is_admin:status.is_admin,access_mode:'free'}}
  async function requireAccess(){if((await access()).is_banned){const e=Error('Ваш доступ к чату и новым публикациям заблокирован владельцем.');e.code='BANNED';throw e}}
+ async function removePhotoPaths(paths){if(paths.length)await request('/storage/v1/object/klev-catches',{method:'DELETE',token:await token(),body:{prefixes:paths}})}
+ async function cleanMyPhotos(){
+  const uid=session.user.id;const folders=await request('/storage/v1/object/list/klev-catches',{method:'POST',token:await token(),body:{prefix:uid+'/',limit:100}});const paths=[];
+  for(const f of folders){
+   if(f.id){paths.push(uid+'/'+f.name);continue}
+   const items=await request('/storage/v1/object/list/klev-catches',{method:'POST',token:await token(),body:{prefix:uid+'/'+f.name+'/',limit:100}});
+   for(const x of items)if(x.id)paths.push(uid+'/'+f.name+'/'+x.name);
+  }
+  await removePhotoPaths(paths);
+  const linked=await db('klev_catches?select=id,photo_path&photo_path=not.is.null');
+  for(const c of linked)await db('rpc/klev_detach_photo',{method:'POST',body:{p_catch:c.id}});
+ }
  window.KlevAPI=async function(path,data){
+  if(path==='password/recover'){
+   const email=String(data.email||'').trim();if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))throw Error('Введите email');
+   const target=location.origin+location.pathname.replace(/index\.html$/,'');
+   await request('/auth/v1/recover?redirect_to='+encodeURIComponent(target),{method:'POST',body:{email}});return {ok:true};
+  }
+  if(path==='password/check'){
+   if(!recovery)throw Error('Откройте новую ссылку из письма восстановления');
+   const j=await request('/auth/v1/user',{token:recovery.access_token});return {ok:true,email:j.email};
+  }
+  if(path==='password/reset'){
+   if(!recovery)throw Error('Ссылка недействительна. Запросите новую');
+   if(typeof data.password!=='string'||data.password.length<10||data.password.length>128)throw Error('Пароль: 10–128 символов');
+   await request('/auth/v1/user',{method:'PUT',token:recovery.access_token,body:{password:data.password}});
+   try{await request('/auth/v1/logout?scope=global',{method:'POST',token:recovery.access_token})}catch{}
+   recovery=null;window.KLEV_RECOVERY_PENDING=false;save(null);return {ok:true};
+  }
+  if(path==='community/me')return db('rpc/klev_community_me',{method:'POST',body:{}});
+  if(path==='community/save'){await db('rpc/klev_member_save',{method:'POST',body:{p_checklist:data.checklist??null,p_read:data.read??null}});return {ok:true}}
+  if(path==='community/pin'){await db('rpc/klev_pin_message',{method:'POST',body:{p_id:data.id||null}});return {ok:true}}
+  if(path==='community/report'){await db('rpc/klev_report_message',{method:'POST',body:{p_id:data.id,p_reason:data.reason}});return {ok:true}}
+  if(path==='community/reports')return db('rpc/klev_admin_reports',{method:'POST',body:{}});
+  if(path==='community/resolve'){await db('rpc/klev_resolve_report',{method:'POST',body:{p_id:data.id}});return {ok:true}}
+  if(path==='community/meetups'){
+   if(data?.publish){await db('rpc/klev_publish_meetup',{method:'POST',body:{p_city:data.city,p_day:data.day,p_method:data.method,p_details:data.details}});return {ok:true}}
+   return db('rpc/klev_meetups_feed',{method:'POST',body:{p_before:data?.before||null}});
+  }
+  if(path==='community/close'){await db('rpc/klev_close_meetup',{method:'POST',body:{p_id:data.id}});return {ok:true}}
+  if(path==='photo/sign'){
+   const rows=await db('klev_catches?id=eq.'+encodeURIComponent(data.id)+'&select=photo_path');const path=rows[0]?.photo_path;
+   if(!path)return {url:null};const result=await request('/storage/v1/object/sign/klev-catches/'+path.split('/').map(encodeURIComponent).join('/'),{method:'POST',token:await token(),body:{expiresIn:600}});
+   return {url:URL+'/storage/v1'+result.signedURL};
+  }
+  if(path==='photo/upload'){
+   await requireAccess();const blob=data.blob;if(!(blob instanceof Blob)||blob.type!=='image/webp'||blob.size>524288)throw Error('Нужно WebP-фото до 512 КБ');
+   if(!/^\d+$/.test(String(data.id)))throw Error('Неверная запись');
+   const path=session.user.id+'/'+data.id+'/'+crypto.randomUUID()+'.webp';
+   const r=await fetch(URL+'/storage/v1/object/klev-catches/'+path,{method:'POST',headers:{apikey:KEY,Authorization:'Bearer '+await token(),'Content-Type':'image/webp','x-upsert':'false'},body:blob});
+   if(!r.ok){const j=await r.json().catch(()=>({}));throw Error(friendly(j.message||j.error||'Не удалось загрузить фото; проверьте лимит 10 фото и размер'))}
+   try{await db('rpc/klev_attach_photo',{method:'POST',body:{p_catch:data.id,p_path:path}})}catch(e){try{await removePhotoPaths([path])}catch{}throw e}
+   return {ok:true};
+  }
+  if(path==='photo/remove'){
+   const rows=await db('klev_catches?id=eq.'+encodeURIComponent(data.id)+'&select=photo_path');const path=rows[0]?.photo_path;
+   if(path)await removePhotoPaths([path]);await db('rpc/klev_detach_photo',{method:'POST',body:{p_catch:data.id}});return {ok:true};
+  }
   if(path==='me'){configured();return {user:await me()}}
   if(path==='register'){
    if(!data.consent)throw Error('Нужно согласие на хранение данных');
@@ -52,8 +117,8 @@
   if(path==='profile'){await requireAccess();await db('klev_profiles?id=eq.'+encodeURIComponent(session?.user?.id||''),{method:'PATCH',body:{name:data.name,city:data.city,favorite:data.favorite,experience:data.experience,bio:data.bio}});return {user:await me()}}
   if(path==='messages'){
    await requireAccess();
-   if(data){await db('klev_messages',{method:'POST',body:{user_id:session?.user?.id,text:data.text}});return {ok:true}}
-   const rows=await db('klev_messages?select=id,user_id,name,city,text,created&order=id.desc&limit=100');return {messages:rows.reverse()};
+   if(data){await db('klev_messages',{method:'POST',body:{user_id:session?.user?.id,text:data.text,reply_to:data.reply_to||null}});return {ok:true}}
+   return db('rpc/klev_chat_feed',{method:'POST',body:{}});
   }
   if(path==='catches'){
    if(data){await requireAccess();await db('klev_catches',{method:'POST',body:{user_id:session?.user?.id,fish:data.fish,weight:Number(data.weight),date:data.date,place:data.place,note:data.note||''}});return {ok:true}}
@@ -70,13 +135,15 @@
   if(path==='admin/unban'){await db('rpc/klev_admin_unban_user',{method:'POST',body:{p_user_id:data.user_id}});return {ok:true}}
   if(path==='export'){
    const result={profile:await me(),catches:(await window.KlevAPI('catches')).catches};
-   try{result.community=await window.KlevAPI('feedback/mine')}catch(e){result.community={unavailable:true,error:e.message}}
+   try{result.community=await window.KlevAPI('feedback/mine');result.community_update=await db('rpc/klev_community_export',{method:'POST',body:{}});if(Array.isArray(result.community_update?.catches)){result.catches=result.community_update.catches;delete result.community_update.catches}if(Array.isArray(result.community_update?.messages)){result.messages=result.community_update.messages;delete result.community_update.messages}result.photo_note='Фото скачиваются отдельно из дневника; JSON содержит пути, не файлы.'}catch(e){result.community={unavailable:true,error:e.message}}
    return result;
   }
   if(path==='delete-account'){
    if(!session)throw Error('Войдите в аккаунт');
+   if((await me()).is_admin)throw Error('Владелец не может удалить свой аккаунт, пока права не переданы через базу.');
    // Reauthenticate before destructive action; the RPC independently restricts deletion to auth.uid().
    const s=await request('/auth/v1/token?grant_type=password',{method:'POST',body:{email:session.user.email,password:data.password}});save(s);
+   await cleanMyPhotos();
    await db('rpc/klev_delete_my_account',{method:'POST',body:{confirmation:'DELETE'}});save(null);return {ok:true};
   }
   throw Error('Операция не поддерживается');
