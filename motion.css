@@ -1,0 +1,34 @@
+/* Progressive enhancement: no content is hidden when JS or observers fail. */
+@keyframes klev-enter{from{opacity:.2;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
+@keyframes klev-view{from{opacity:.35;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+@keyframes klev-dialog{from{opacity:.25;transform:translateY(10px) scale(.98)}to{opacity:1;transform:translateY(0) scale(1)}}
+@keyframes klev-message{from{opacity:.25;transform:translateX(-9px)}to{opacity:1;transform:translateX(0)}}
+@keyframes klev-float{0%,100%{transform:rotate(-3deg) translateY(0)}50%{transform:rotate(-3deg) translateY(-4px)}}
+body.motion-ready:not(.motion-off) .view:not(.hidden){animation:klev-view .36s ease-out backwards}
+body.motion-ready:not(.motion-off) .reveal-pending.is-visible{animation:klev-enter .48s cubic-bezier(.2,.65,.3,1) backwards}
+body.motion-ready:not(.motion-off) dialog[open]{animation:klev-dialog .24s ease-out backwards}
+body.motion-ready:not(.motion-off) .motion-new-message{animation:klev-message .3s ease-out backwards}
+body.motion-ready:not(.motion-off) .floating-note{animation:klev-float 6s ease-in-out infinite}
+body.motion-ready:not(.motion-off) :is(.btn,.nav,.fishing-nav button,.motion-footer button,.forecast-day){transition:background-color .2s,color .2s,border-color .2s,box-shadow .2s,transform .18s}
+body.motion-ready:not(.motion-off) :is(.btn,.motion-footer button):active:not(:disabled){transform:translateY(1px) scale(.98)}
+body.motion-ready:not(.motion-off) :is(.fish-card,.gear-card,.city-card){transition:border-color .22s,box-shadow .22s}
+@media(hover:hover){body.motion-ready:not(.motion-off) :is(.fish-card,.gear-card,.city-card):hover{border-color:var(--accent);box-shadow:0 8px 24px #0002}}
+body.motion-paused *,body.motion-paused *::before,body.motion-paused *::after{animation-play-state:paused!important}
+body.motion-off *,body.motion-off *::before,body.motion-off *::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}
+body.motion-off .btn:hover,body.motion-off .btn:active{transform:none}
+.motion-footer{display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;flex-basis:100%;padding-top:16px;border-top:1px solid var(--line)}
+body .motion-footer button{position:relative;font-size:12px;color:var(--muted);padding:8px 2px;min-height:40px;text-align:left}
+body .motion-footer button:hover{color:var(--accent)}body .motion-footer button:disabled{cursor:default}
+.has-release-dot::after{content:'';position:absolute;width:6px;height:6px;right:-8px;top:9px;border-radius:50%;background:var(--accent)}
+#back-to-top,#update-pill{position:fixed;z-index:15;border:1px solid var(--line);background:var(--panel);color:var(--ink);box-shadow:0 5px 20px #0004;min-height:44px}
+#back-to-top{right:max(18px,env(safe-area-inset-right));bottom:max(20px,env(safe-area-inset-bottom));width:44px;border-radius:50%;font-size:24px}
+#update-pill{left:max(18px,env(safe-area-inset-left));bottom:max(20px,env(safe-area-inset-bottom));max-width:calc(100vw - 90px);padding:10px 15px;border-color:var(--accent);border-radius:24px;font-size:12px;font-weight:700}
+#update-pill:hover{background:var(--panel-2)}#back-to-top:hover{color:var(--accent)}
+#update-pill[hidden],#back-to-top[hidden],#maintenance-info[hidden],#reload-update[hidden]{display:none!important}
+#updates-dialog{width:540px}#updates-dialog .eyebrow{font-size:10px;display:block;padding-right:20px}#updates-dialog h2{font-size:27px;line-height:1.15;margin:12px 0 16px}#updates-dialog h3{font-size:16px;color:var(--accent)}
+#updates-changes{padding-left:19px;margin:12px 0 18px;font-size:14px;color:var(--ink)}#updates-changes li{padding-left:3px;margin:7px 0}
+.maintenance-info{padding:14px;border:1px solid var(--accent);border-radius:10px;background:var(--bg);margin-bottom:16px;font-size:13px}.maintenance-info p{margin:8px 0 0}
+#updates-unsaved,#updates-result,#share-result{font-size:13px}.update-actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:18px}.update-actions .btn{white-space:normal;text-align:center}
+#share-dialog label{display:block;font-size:13px}#site-share-url{display:block;width:100%;font-size:12px;margin:8px 0 12px;padding:12px;border-radius:6px}#copy-site-link{white-space:normal}
+@media(max-width:480px){#updates-dialog{padding:30px 21px 24px}#updates-dialog h2{font-size:25px}#updates-changes{font-size:13px}.update-actions .btn{width:100%}.motion-footer{gap:4px 16px}#update-pill{font-size:11px;padding:10px 12px}}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}.btn:hover,.btn:active{transform:none!important}}

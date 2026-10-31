@@ -76,7 +76,7 @@ $('#feedback-form').addEventListener('submit',async e=>{
  try{
   await window.KlevAPI(kind==='ratings'?'feedback/rate':'feedback/idea',{stars:f.elements.stars.value,text:f.elements.text.value});
   $('#feedback-dialog').close();f.reset();window.toast(kind==='ratings'?'Ваша оценка опубликована':'Ваша идея опубликована');
-  await load(kind);await window.navigate('home');$('#'+kind).scrollIntoView({behavior:'smooth'});
+  await load(kind);await window.navigate('home');$('#'+kind).scrollIntoView({behavior:(window.matchMedia('(prefers-reduced-motion: reduce)').matches||window.KlevMotion?.motionEnabled()===false)?'instant':'smooth'});
  }catch(error){$('#feedback-error').textContent=error.message}
  finally{submitting=false;button.disabled=false}
 });

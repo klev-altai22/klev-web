@@ -86,9 +86,9 @@ function init(){
  document.addEventListener('click',async e=>{const b=e.target.closest('button');if(!b)return;
   if(b.dataset.forecastDay!==undefined&&weather){selectedDay=Number(b.dataset.forecastDay);render()}
   if(b.id==='weather-refresh')load(true);
-  if(b.dataset.pickCity){city=D.cities.find(c=>c.id===b.dataset.pickCity)||city;setStore('klev-city',city.id);await window.navigate('home');load();$('#forecast').scrollIntoView({behavior:'smooth'})}
-  if(b.dataset.pickFish){species=D.fish.find(f=>f.id===b.dataset.pickFish)||species;setStore('klev-fish',species.id);sync();if(weather)render();await window.navigate('home');$('#forecast').scrollIntoView({behavior:'smooth'})}
-  if(b.dataset.section){await window.navigate('home');$('#'+b.dataset.section)?.scrollIntoView({behavior:'smooth'})}
+  if(b.dataset.pickCity){city=D.cities.find(c=>c.id===b.dataset.pickCity)||city;setStore('klev-city',city.id);await window.navigate('home');load();$('#forecast').scrollIntoView({behavior:(window.matchMedia('(prefers-reduced-motion: reduce)').matches||window.KlevMotion?.motionEnabled()===false)?'instant':'smooth'})}
+  if(b.dataset.pickFish){species=D.fish.find(f=>f.id===b.dataset.pickFish)||species;setStore('klev-fish',species.id);sync();if(weather)render();await window.navigate('home');$('#forecast').scrollIntoView({behavior:(window.matchMedia('(prefers-reduced-motion: reduce)').matches||window.KlevMotion?.motionEnabled()===false)?'instant':'smooth'})}
+  if(b.dataset.section){await window.navigate('home');$('#'+b.dataset.section)?.scrollIntoView({behavior:(window.matchMedia('(prefers-reduced-motion: reduce)').matches||window.KlevMotion?.motionEnabled()===false)?'instant':'smooth'})}
   if(b.id==='theme-toggle'){const dark=document.body.classList.toggle('night-theme');setStore('klev-dark',dark);b.setAttribute('aria-pressed',String(dark));b.textContent=dark?'☀':'☾'}
  });
  if(getStore('klev-dark',false)){document.body.classList.add('night-theme');$('#theme-toggle').setAttribute('aria-pressed','true');$('#theme-toggle').textContent='☀'}
