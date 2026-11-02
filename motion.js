@@ -1,10 +1,10 @@
 /* КЛЁВ Алтай: progressive motion and read-only, same-origin release notifications. */
 (()=>{'use strict';
- const BUILD=2026103103,LABEL='Фото в общем чате',SITE='https://klev-altai22.github.io/klev-web/';
- const CHANGES=["Фото прямо в общем чате: с подписью или без.", "Предпросмотр перед отправкой и сжатие изображения до 512 КБ.", "Увеличение фото, ответы и жалобы на сообщения с фотографиями.", "Защита от дублей при повторной отправке после обрыва связи.", "Фото дневника остаются личными; фото чата видны участникам.", "Переходы, уведомления о версиях и остальные функции сохранены."];
+ const BUILD=2026110101,LABEL='План выезда',SITE='https://klev-altai22.github.io/klev-web/';
+ const CHANGES=["План выезда: город, рыба, дата, время и список вещей.", "До шести планов на этом устройстве — без публикации в чате.", "Текст плана и файл .ics для ручного добавления в календарь.", "До четырёх избранных городов и быстрый поиск по рыбам и снастям.", "Погода в плане только из существующего источника и с временем получения.", "Личная заметка не попадает в текст для отправки и календарь."];
  const q=s=>document.querySelector(s),read=(key,fallback)=>{try{return JSON.parse(localStorage.getItem(key))??fallback}catch{return fallback}},save=(key,v)=>{try{localStorage.setItem(key,JSON.stringify(v))}catch{}};
  const media=window.matchMedia('(prefers-reduced-motion: reduce)');let userOff=read('klev-motion-off',false)===true,remote=null,busy=false,lastCheck=-Infinity,timer=null,notifiedBuild=0,notifiedMaintenance='',suppressUnload=false;
- const dirtyForms=new Set(),trackedForms=new Set(['message-form','profile-form','catch-form','meetup-form','checklist-form','report-form','feedback-form']);
+ const dirtyForms=new Set(),trackedForms=new Set(['message-form','profile-form','catch-form','meetup-form','checklist-form','report-form','feedback-form','trip-form']);
  const seenMessages=new Set();let firstMessages=true;
  const motionOn=()=>!media.matches&&!userOff;
  const text=(tag,value,cls)=>{const e=document.createElement(tag);if(cls)e.className=cls;e.textContent=value;return e};
@@ -54,6 +54,7 @@
  media.addEventListener?.('change',setMotion);
  document.addEventListener('input',e=>{const f=e.target.closest?.('form');if(f&&trackedForms.has(f.id))dirtyForms.add(f)});
  document.addEventListener('change',e=>{const f=e.target.closest?.('form');if(f&&trackedForms.has(f.id))dirtyForms.add(f)});
+ document.addEventListener('klev:form-saved',e=>{if(e.detail==='trip-form'){const f=q('#trip-form');if(f)dirtyForms.delete(f)}});
  document.addEventListener('reset',e=>dirtyForms.delete(e.target),true);document.addEventListener('close',e=>{if(e.target instanceof HTMLDialogElement)e.target.querySelectorAll('form').forEach(f=>dirtyForms.delete(f))},true);
  window.addEventListener('beforeunload',e=>{if(!suppressUnload&&dirty()){e.preventDefault();e.returnValue=''}});
  document.addEventListener('click',async e=>{const b=e.target.closest('button');if(!b)return;
