@@ -12,7 +12,10 @@ window.KLEV_FISHING_DATA={
  {id:'novoaltaysk',name:'Новоалтайск',lat:53.412022,lon:83.931070,water:'Обская пойма и окрестности',note:'Пойменные протоки зависят от уровня воды и сезона. Уточняйте актуальные проходы и не выходите на незнакомый лёд.'},
  {id:'rubtsovsk',name:'Рубцовск',lat:51.501207,lon:81.207800,water:'Алей',note:'Выбирайте доступный законный участок, проверяйте качество воды и состояние берега. Точки улова здесь не подтверждены.'},
  {id:'slavgorod',name:'Славгород',lat:52.999375,lon:78.645940,water:'Озёра и водоёмы округа',note:'Не каждое озеро подходит для рыбалки. Уточняйте солёность, наличие рыбы, природоохранный статус и условия доступа.'},
- {id:'yarovoye',name:'Яровое',lat:52.923446,lon:78.569601,water:'Водоёмы окрестностей',note:'Не считайте курортное озеро автоматически рыболовным местом. Для поездки подбирайте подходящий водоём и проверяйте его характеристики.'}
+ {id:'yarovoye',name:'Яровое',lat:52.923446,lon:78.569601,water:'Водоёмы окрестностей',note:'Не считайте курортное озеро автоматически рыболовным местом. Для поездки подбирайте подходящий водоём и проверяйте его характеристики.'},
+ {"id": "moscow", "name": "Москва", "lat": 55.75204, "lon": 37.61781, "timeZone": "Europe/Moscow", "utcOffset": 3, "region": "Москва", "alertUrl": "https://77.mchs.gov.ru/", "water": "Москва-река и водоёмы окрестностей", "note": "Для конкретного участка Москвы-реки или водоёма отдельно проверьте качество воды, доступ и ограничения на ловлю. Наличие реки не означает разрешение на ловлю в любой точке."},
+ {"id": "yekaterinburg", "name": "Екатеринбург", "lat": 56.85733, "lon": 60.61529, "timeZone": "Asia/Yekaterinburg", "utcOffset": 5, "region": "Свердловская область", "alertUrl": "https://66.mchs.gov.ru/", "water": "Исеть и водоёмы окрестностей", "note": "Уточняйте качество воды, доступ и правила для выбранного участка Исети или другого водоёма. Это обзор окрестностей, а не проверенные точки улова."},
+ {"id": "novosibirsk", "name": "Новосибирск", "lat": 55.02259, "lon": 82.93175, "timeZone": "Asia/Novosibirsk", "utcOffset": 7, "region": "Новосибирская область", "alertUrl": "https://54.mchs.gov.ru/", "water": "Обь и водоёмы окрестностей", "note": "На Оби учитывайте течение, уровень воды и ветер. Для водохранилища отдельно проверяйте доступ, правила, погоду на месте и предупреждения МЧС."}
  ],
  fish:[
  {id:'pike',photo:{"file":"Esox lucius ZOO 1.jpg","author":"Jik jik","license":"CC BY-SA 3.0","licenseUrl":"https://creativecommons.org/licenses/by-sa/3.0/","alt":"Щука (Esox lucius) — фотография вида","width":900,"height":675,"src":"./fish-pike.jpg","source":"https://commons.wikimedia.org/wiki/File:Esox_lucius_ZOO_1.jpg"},name:'Щука',latin:'Esox lucius',kind:'Хищник',time:'Утро и вечер; в холодный сезон пробуют также светлые дневные часы.',window:'day',place:'Кромки растительности, укрытия и перепады глубин — если они есть на выбранном водоёме.',gear:'Спиннинг, приманка по условиям и поводок, устойчивый к зубам.',tip:'Начинайте с поиска укрытий и меняйте темп проводки. Универсальной приманки для любого дня нет.'},
@@ -26,3 +29,15 @@ window.KLEV_FISHING_DATA={
  ],
  sources:{cities:'https://www.ap22.ru/regions',coordinates:'https://gdealtai.ru/altajskij-kraj/goroda/',weather:'https://open-meteo.com/',weatherDocs:'https://open-meteo.com/en/docs',terms:'https://open-meteo.com/en/terms',rules:'https://fish.gov.ru/territorialnye-upravleniya/',emergency:'https://22.mchs.gov.ru/'}
 };
+
+/* City-local civil time. These Russian cities use fixed UTC+3/+5/+7, no seasonal shift. */
+(()=>{'use strict';
+ const find=c=>typeof c==='string'?window.KLEV_FISHING_DATA.cities.find(x=>x.id===c):c;
+ const zone=c=>find(c)?.timeZone||'Asia/Barnaul', offset=c=>find(c)?.utcOffset??7;
+ const utcOffset=c=>'+'+String(offset(c)).padStart(2,'0')+':00';
+ const label=c=>{const x=find(c);return (x?.name||'Барнаул')+', UTC+'+offset(c)};
+ const today=(c,now=Date.now())=>new Intl.DateTimeFormat('en-CA',{timeZone:zone(c),year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(now));
+ const toUtc=(date,time,c)=>Date.parse(date+'T'+time+':00'+utcOffset(c));
+ const dateText=(s,c)=>new Date(s+'T12:00:00Z').toLocaleDateString('ru-RU',{timeZone:zone(c),day:'numeric',month:'long',year:'numeric'});
+ window.KlevCityTime=Object.freeze({zone,offset,utcOffset,label,today,toUtc,dateText});
+})();
