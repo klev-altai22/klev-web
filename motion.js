@@ -1,6 +1,6 @@
 /* КЛЁВ Алтай: progressive motion and read-only, same-origin release notifications. */
 (()=>{'use strict';
- const BUILD=2026110801,LABEL='Ещё три города',SITE='https://klev-altai22.github.io/klev-web/';
+ const BUILD=2026110802,LABEL='Города, рыбы и фотографии',SITE='https://klev-altai22.github.io/klev-web/';
  const CHANGES=["Добавлены Москва, Екатеринбург и Новосибирск — теперь 15 городов.", "Все 12 городов Алтайского края сохранены. Новые города показаны с правильными регионами.", "Погода и выезд — по местному времени выбранного города: UTC+3, UTC+5 или UTC+7.", "Текст плана и календарь .ics учитывают часовой пояс города.", "Новые города доступны в избранном, плане выезда и поиске.", "Общий чат, дневник и права владельца не меняются."];
  const q=s=>document.querySelector(s),read=(key,fallback)=>{try{return JSON.parse(localStorage.getItem(key))??fallback}catch{return fallback}},save=(key,v)=>{try{localStorage.setItem(key,JSON.stringify(v))}catch{}};
  const media=window.matchMedia('(prefers-reduced-motion: reduce)');let userOff=read('klev-motion-off',false)===true,remote=null,busy=false,lastCheck=-Infinity,timer=null,notifiedBuild=0,notifiedMaintenance='',suppressUnload=false;

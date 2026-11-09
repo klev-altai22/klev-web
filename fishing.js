@@ -1,6 +1,6 @@
 (()=>{
 'use strict';
-const D=window.KLEV_FISHING_DATA;
+const D=window.KLEV_FISHING_DATA,R=window.KlevFishRegions;
 const $=s=>document.querySelector(s);
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const finite=v=>typeof v==='number'&&Number.isFinite(v);
@@ -14,6 +14,7 @@ function getStore(k,fallback=null){try{return JSON.parse(localStorage.getItem(k)
 function setStore(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch{}}
 let city=D.cities.find(c=>c.id===getStore('klev-city'))||D.cities.find(c=>c.id==='novoaltaysk');
 let species=D.fish.find(f=>f.id===getStore('klev-fish'))||D.fish[0];
+if(!R.allowed(species,city))species=R.list(city).find(f=>R.allowed(f,city));
 let selectedDay=0,weather=null,loadedAt=null,stale=false,sequence=0,busy=false,nextRefreshAt=0;
 const lastTry=new Map();let refreshTimer;
 function formatDate(date){return new Date(date+'T12:00:00Z').toLocaleDateString('ru',{timeZone:CT.zone(city),weekday:'short',day:'numeric',month:'short'})}
@@ -46,6 +47,7 @@ function publicView(){
 function announcePublicWeather(){document.dispatchEvent(new CustomEvent('klev:weather',{detail:publicView()}))}
 async function selectPublic(value={}){
  const nextCity=D.cities.find(c=>c.id===value.cityId),nextFish=D.fish.find(f=>f.id===value.fishId);if(!nextCity||!nextFish)throw Error('Выберите город и рыбу из справочника.');
+ if(!R.allowed(nextFish,nextCity))throw Error('Для этого города рыба не предлагается как цель ловли. Проверьте справочник и охранный статус.');
  const changed=nextCity.id!==city.id;city=nextCity;species=nextFish;setStore('klev-city',city.id);setStore('klev-fish',species.id);sync();
  if(changed||!weather||Date.now()-loadedAt>=TTL)await load();
  if(weather){const index=futureDays().findIndex(x=>x.date===value.date);if(index>=0)selectedDay=index;render()}
@@ -69,7 +71,11 @@ function render(){
  updateMini(c);announcePublicWeather();
 }
 function updateMini(c){$('#hero-weather').innerHTML=weather?`<span>${esc(city.name)}</span><strong>${temp(c.temperature_2m)}</strong><span>${weatherText(c.weather_code)}</span>`:'<span>Погода загружается</span>'}
-function sync(){const region=$('#forecast-region');if(region)region.textContent=(city.region||'Алтайский край').toLocaleUpperCase('ru')+' · UTC+'+CT.offset(city);const alerts=$('#regional-alerts');if(alerts){alerts.href=city.alertUrl||'https://22.mchs.gov.ru/';alerts.textContent='предупреждения МЧС: '+(city.region||'Алтайский край')+' ↗';}document.querySelectorAll('[data-city-select]').forEach(s=>s.value=city.id);document.querySelectorAll('[data-city-label]').forEach(s=>s.textContent=city.name);document.querySelectorAll('[data-fish-select]').forEach(s=>s.value=species.id);$('#city-place').innerHTML=`<div><span class="eyebrow muted">ВЫБРАННЫЙ ГОРОД</span><h3>${esc(city.name)} · ${esc(city.water)}</h3><p class="subtle">${esc(city.region||'Алтайский край')} · ${esc(CT.label(city))}</p><p>${esc(city.note)}</p><a class="text-link" href="https://www.openstreetmap.org/?mlat=${city.lat}&mlon=${city.lon}#map=12/${city.lat}/${city.lon}" target="_blank" rel="noopener noreferrer">Посмотреть окрестности на OpenStreetMap ↗</a></div><span class="place-number">${String(D.cities.indexOf(city)+1).padStart(2,'0')}<small>/${D.cities.length}</small></span>`}
+function sync(){
+ if(!R.allowed(species,city)){species=R.list(city).find(f=>R.allowed(f,city));setStore('klev-fish',species.id)}
+ document.querySelectorAll('[data-fish-select]').forEach(s=>s.innerHTML=R.list(city).filter(f=>R.allowed(f,city)).map(f=>`<option value="${f.id}">${esc(f.name)}</option>`).join(''));
+ updateFishRegion();
+const region=$('#forecast-region');if(region)region.textContent=(city.region||'Алтайский край').toLocaleUpperCase('ru')+' · UTC+'+CT.offset(city);const alerts=$('#regional-alerts');if(alerts){alerts.href=city.alertUrl||'https://22.mchs.gov.ru/';alerts.textContent='предупреждения МЧС: '+(city.region||'Алтайский край')+' ↗';}document.querySelectorAll('[data-city-select]').forEach(s=>s.value=city.id);document.querySelectorAll('[data-city-label]').forEach(s=>s.textContent=city.name);document.querySelectorAll('[data-fish-select]').forEach(s=>s.value=species.id);$('#city-place').innerHTML=`<div><span class="eyebrow muted">ВЫБРАННЫЙ ГОРОД</span><h3>${esc(city.name)} · ${esc(city.water)}</h3><p class="subtle">${esc(city.region||'Алтайский край')} · ${esc(CT.label(city))}</p><p>${esc(city.note)}</p><a class="text-link" href="https://www.openstreetmap.org/?mlat=${city.lat}&mlon=${city.lon}#map=12/${city.lat}/${city.lon}" target="_blank" rel="noopener noreferrer">Посмотреть окрестности на OpenStreetMap ↗</a></div><span class="place-number">${String(D.cities.indexOf(city)+1).padStart(2,'0')}<small>/${D.cities.length}</small></span>`}
 async function load(force=false){
  const own=++sequence;busy=true;sync();selectedDay=0;weather=null;loadedAt=null;stale=false;
  const key='klev-weather-v4-cities-'+city.id,cached=getStore(key);const hasCache=cacheValid(cached,city);
@@ -89,19 +95,25 @@ async function load(force=false){
  finally{clearTimeout(timer);if(own===sequence){busy=false;announcePublicWeather()}}
 }
 function fishPhoto(f){if(!f.photo?.src)return '<div class="fish-art fish-photo-missing">Фотография недоступна</div>';return `<figure class="fish-photo"><div class="fish-art fish-photo-frame"><a href="${esc(f.photo.src)}" target="_blank" rel="noopener noreferrer" aria-label="Открыть фотографию: ${esc(f.name)}"><img src="${esc(f.photo.src)}" alt="${esc(f.photo.alt)}" width="${f.photo.width}" height="${f.photo.height}" loading="lazy" decoding="async"></a><span>${esc(f.kind)}</span></div><figcaption class="photo-credit">Фото: <a href="${esc(f.photo.source)}" target="_blank" rel="noopener noreferrer">${esc(f.photo.author)}</a> · <a href="${esc(f.photo.licenseUrl)}" target="_blank" rel="noopener noreferrer">${esc(f.photo.license)}</a>${f.photo.caption?`<span>${esc(f.photo.caption)}</span>`:''}</figcaption></figure>`}
+function updateFishRegion(){
+ const r=R.region(city),node=$('#fish-region-note');if(node)node.textContent=r.label+'. Список неполный: вид встречается в регионе, но не обязательно в выбранном водоёме. Это не разрешение на ловлю.';
+ const src=$('#fish-region-sources');if(src)src.innerHTML=r.sources.map(s=>`<a href="${esc(s.url)}" target="_blank" rel="noopener noreferrer">${esc(s.title)} ↗</a>`).join(' · ');
+ document.querySelectorAll('#fish-directory .fish-card').forEach(card=>{const id=card.dataset.fishId,listed=R.listed(id,city),locked=R.protectedFish(id,city);card.dataset.regionVisible=String(listed);card.classList.toggle('hidden',!listed);const b=card.querySelector('[data-pick-fish]');b.disabled=locked;b.hidden=locked;b.classList.toggle('hidden',locked);card.querySelector('.fish-region-status').textContent=locked?(id==='crucian'?'В Москве золотой карась охраняется. Фото показывает золотого карася; карточка группы не используется как цель ловли. Серебряного карася нужно отличать отдельно.':'Охраняемый вид в Москве · только для знакомства, не цель ловли.'):'Проверьте наличие вида, действующие правила и доступ для конкретного водоёма.';});
+ document.dispatchEvent(new CustomEvent('klev:fish-region',{detail:{cityId:city.id}}));
+}
 function init(){
  const options=D.cities.map(c=>`<option value="${c.id}">${c.name}</option>`).join('');document.querySelectorAll('[data-city-select]').forEach(s=>s.innerHTML=options);
  document.querySelectorAll('[data-fish-select]').forEach(s=>s.innerHTML=D.fish.map(f=>`<option value="${f.id}">${f.name}</option>`).join(''));
  $('#city-count').textContent=D.cities.length;
  $('#city-directory').innerHTML=D.cities.map((c,i)=>`<button class="city-card" data-pick-city="${c.id}" data-search="${c.name.toLocaleLowerCase('ru')}"><span class="eyebrow muted">${String(i+1).padStart(2,'0')} · ${esc((c.region||'Алтайский край').toLocaleUpperCase('ru'))}</span><h3>${c.name}</h3><p>${esc(c.water)}</p><span>Выбрать город ↗</span></button>`).join('');
- $('#fish-directory').innerHTML=D.fish.map((f,i)=>`<article class="fish-card">${fishPhoto(f)}<h3>${f.name}</h3><small class="subtle">${f.latin}</small><p>${f.time}</p><details><summary>Где искать и что взять</summary><p><strong>Участок:</strong> ${f.place}</p><p><strong>Снасть:</strong> ${f.gear}</p><p>${f.tip}</p></details><button class="text-link" data-pick-fish="${f.id}">Показать справочные часы ↗</button></article>`).join('');
+ $('#fish-directory').innerHTML=D.fish.map((f,i)=>`<article class="fish-card" data-fish-id="${f.id}">${fishPhoto(f)}<h3>${f.name}</h3><small class="subtle">${f.latin}</small><p>${f.time}</p><details><summary>Где искать и что взять</summary><p><strong>Участок:</strong> ${f.place}</p><p><strong>Снасть:</strong> ${f.gear}</p><p>${f.tip}</p></details><p class="subtle fish-region-status"></p><button class="text-link" data-pick-fish="${f.id}">Показать справочные часы ↗</button></article>`).join('');
  document.addEventListener('change',e=>{if(e.target.matches('[data-city-select]')){city=D.cities.find(c=>c.id===e.target.value)||city;setStore('klev-city',city.id);load()}if(e.target.matches('[data-fish-select]')){species=D.fish.find(f=>f.id===e.target.value)||species;setStore('klev-fish',species.id);sync();if(weather)render()}});
  document.addEventListener('input',e=>{if(e.target.id==='city-search'){const q=e.target.value.trim().toLocaleLowerCase('ru');let count=0;document.querySelectorAll('.city-card').forEach(x=>{const show=x.dataset.search.includes(q);x.classList.toggle('hidden',!show);if(show)count++});$('#city-search-status').textContent=count?'Найдено городов: '+count:'Город не найден. В списке 15 городов: 12 городов Алтайского края, Москва, Екатеринбург и Новосибирск.'}});
  document.addEventListener('click',async e=>{const b=e.target.closest('button');if(!b)return;
   if(b.dataset.forecastDay!==undefined&&weather){selectedDay=Number(b.dataset.forecastDay);render()}
   if(b.id==='weather-refresh')load(true);
   if(b.dataset.pickCity){city=D.cities.find(c=>c.id===b.dataset.pickCity)||city;setStore('klev-city',city.id);await window.navigate('home');load();$('#forecast').scrollIntoView({behavior:(window.matchMedia('(prefers-reduced-motion: reduce)').matches||window.KlevMotion?.motionEnabled()===false)?'instant':'smooth'})}
-  if(b.dataset.pickFish){species=D.fish.find(f=>f.id===b.dataset.pickFish)||species;setStore('klev-fish',species.id);sync();if(weather)render();await window.navigate('home');$('#forecast').scrollIntoView({behavior:(window.matchMedia('(prefers-reduced-motion: reduce)').matches||window.KlevMotion?.motionEnabled()===false)?'instant':'smooth'})}
+  if(b.dataset.pickFish){if(!R.allowed(b.dataset.pickFish,city))return;species=D.fish.find(f=>f.id===b.dataset.pickFish)||species;setStore('klev-fish',species.id);sync();if(weather)render();await window.navigate('home');$('#forecast').scrollIntoView({behavior:(window.matchMedia('(prefers-reduced-motion: reduce)').matches||window.KlevMotion?.motionEnabled()===false)?'instant':'smooth'})}
   if(b.dataset.section){await window.navigate('home');$('#'+b.dataset.section)?.scrollIntoView({behavior:(window.matchMedia('(prefers-reduced-motion: reduce)').matches||window.KlevMotion?.motionEnabled()===false)?'instant':'smooth'})}
   if(b.id==='theme-toggle'){const dark=document.body.classList.toggle('night-theme');setStore('klev-dark',dark);b.setAttribute('aria-pressed',String(dark));b.textContent=dark?'☀':'☾'}
  });

@@ -65,3 +65,16 @@
 - Налим: автор указан в текстовом описании страницы файла — Achim R. Schloeffel; уже существующее кадрирование Commons выполнено HerrAdams. Выбрана предлагаемая CC BY-SA 3.0, а не альтернативная GFDL.
 - Плотва: оригинальная фотография Algirdas; производная обработка — George Chernilevsky, как указано на странице файла.
 - Public domain / общественное достояние: это обозначение источника, не CC0; авторы и ссылки приведены даже там, где атрибуция не обязательна.
+
+
+## Добавленные фотографии
+
+Фотографии видов, не местные уловы. Уменьшение и JPEG-сжатие без ретуши и обрезки.
+
+- **Карп / сазан** — George Chernilevsky; [Cyprinus carpio 2008 G1.jpg](https://commons.wikimedia.org/wiki/File:Cyprinus_carpio_2008_G1.jpg); [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/). Локальный файл `./fish-carp.jpg`, 960 × 439.
+
+- **Линь** — Viridiflavus; [FemaleTench1.JPG](https://commons.wikimedia.org/wiki/File:FemaleTench1.JPG); [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/). Локальный файл `./fish-tench.jpg`, 960 × 406.
+
+- **Ёрш** — Gilles San Martin; [Gymnocephalus cernua.jpg](https://commons.wikimedia.org/wiki/File:Gymnocephalus_cernua.jpg); [CC BY-SA 2.0](https://creativecommons.org/licenses/by-sa/2.0/). Локальный файл `./fish-ruffe.jpg`, 960 × 640.
+
+- **Уклейка** — David Perez (DPC); [Alburnus alburnus 01 by-dpc.jpg](https://commons.wikimedia.org/wiki/File:Alburnus_alburnus_01_by-dpc.jpg); [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/). Локальный файл `./fish-bleak.jpg`, 960 × 306.

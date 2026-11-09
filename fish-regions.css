@@ -1,0 +1,8 @@
+/* Region-scoped fish directory. Existing theme and accessibility preferences stay intact. */
+#fish-guide>label{display:block;max-width:32rem;margin:0 0 1rem;font-size:.9rem}
+#fish-guide>label select{display:block;width:100%;margin-top:.5rem;padding:.8rem;border:1px solid #73816e;border-radius:6px;background:#f0ebd8;color:#20372b;font:inherit}
+.night-theme #fish-guide>label select{background:#20372b;color:#e7e0c9}
+#fish-region-sources{overflow-wrap:anywhere;line-height:1.8}
+#fish-region-note{max-width:70ch;line-height:1.7}
+.fish-region-status{font-size:.85rem;line-height:1.65}
+@media(max-width:560px){#fish-guide .fish-grid{grid-template-columns:minmax(0,1fr)}#fish-guide .fish-card{min-width:0}#fish-guide .fish-card h3{font-size:1.65rem}#fish-guide .fish-photo-frame{min-height:160px}}
